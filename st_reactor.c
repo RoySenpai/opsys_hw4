@@ -16,17 +16,14 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
+#include "reactor.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
-#include <pthread.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "reactor.h"
 
 void *reactorRun(void *react) {
     if (react == NULL)
@@ -41,20 +38,31 @@ void *reactorRun(void *react) {
 
     while (reactor->running)
     {
-        struct pollfd fds[reactor->size];
+        size_t size = 0, i = 0;
         reactor_node_ptr curr = reactor->head;
 
-        memset(fds, 0, sizeof(struct pollfd) * reactor->size);
+        while (curr != NULL)
+        {
+            size++;
+            curr = curr->next;
+        }
 
-        for (unsigned int i = 0; i < reactor->size; ++i)
+        struct pollfd fds[size];
+        curr = reactor->head;
+
+        memset(fds, 0, sizeof(fds));
+
+        while (curr != NULL)
         {
             fds[i].fd = curr->fd;
             fds[i].events = POLLIN;
             fds[i].revents = 0;
+
             curr = curr->next;
+            i++;
         }
 
-        int ret = poll(fds, reactor->size, -1);
+        int ret = poll(fds, i, -1);
 
         if (ret < 0)
         {
@@ -62,8 +70,8 @@ void *reactorRun(void *react) {
             return NULL;
         }
 
-        for (unsigned int i = 0; i < reactor->size; ++i)
-        {
+        for (i = 0; i < size; ++i)
+        {            
             if (fds[i].revents & POLLIN)
             {
                 reactor_node_ptr curr = reactor->head;
@@ -87,14 +95,12 @@ void *reactorRun(void *react) {
                     prev_node->next = curr_node->next;
 
                     free(curr_node);
-
-                    --reactor->size;
                 }
 
                 continue;
             }
 
-            else if ((fds[i].revents & POLLHUP || fds[i].revents & POLLERR || fds[i].revents & POLLNVAL) && fds[i].fd != reactor->head->fd)
+            else if ((fds[i].revents & POLLHUP || fds[i].revents & POLLNVAL || fds[i].revents & POLLERR) && fds[i].fd != reactor->head->fd)
             {
                 reactor_node_ptr curr_node = reactor->head;
                 reactor_node_ptr prev_node = NULL;
@@ -108,8 +114,6 @@ void *reactorRun(void *react) {
                 prev_node->next = curr_node->next;
 
                 free(curr_node);
-
-                --reactor->size;
             }
         }
     }
@@ -126,12 +130,12 @@ void *createReactor() {
 
     if ((react = (reactor_t_ptr)malloc(sizeof(reactor_t))) == NULL)
     {
-        perror("malloc");
+        perror("malloc() failed");
         return NULL;
     }
 
+    react->thread = 0;
     react->head = NULL;
-    react->size = 0;
     react->running = false;
 
     fprintf(stdout, "[INFO] Reactor created\n");
@@ -148,7 +152,7 @@ void startReactor(void *react) {
 
     reactor_t_ptr reactor = (reactor_t_ptr)react;
 
-    if (reactor->running || reactor->head == NULL || reactor->size == 0)
+    if (reactor->running || reactor->head == NULL)
         return;
 
     fprintf(stdout, "[INFO] Starting reactor thread...\n");
@@ -175,6 +179,12 @@ void stopReactor(void *react) {
     reactor->running = false;
 
     pthread_cancel(reactor->thread);
+
+    // In case the thread is blocked on poll()
+    // Ensure that the thread is cancelled by joining it, and then detach it
+    // Prevents memory leaks
+    pthread_join(reactor->thread, NULL);
+    pthread_detach(reactor->thread);
 }
 
 void addFd(void *react, int fd, handler_t handler) {
@@ -209,8 +219,6 @@ void addFd(void *react, int fd, handler_t handler) {
 
         curr->next = node;
     }
-
-    reactor->size++;
 }
 
 void WaitFor(void *react) {

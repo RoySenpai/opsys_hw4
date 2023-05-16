@@ -16,8 +16,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include <stdio.h>
-#include <stdlib.h>
+#include "reactor.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -27,9 +26,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "reactor.h"
 
-reactor_t_ptr reactor = NULL;
+void* reactor = NULL;
 
 int main(void) {
 	struct sockaddr_in server_addr;
@@ -102,7 +100,7 @@ void signal_handler() {
 
 		fprintf(stdout, "[INFO] Closing all sockets and freeing memory...\n");
 
-		reactor_node_ptr curr = reactor->head;
+		reactor_node_ptr curr = ((reactor_t_ptr)reactor)->head;
 		reactor_node_ptr prev = NULL;
 
 		while (curr != NULL)
