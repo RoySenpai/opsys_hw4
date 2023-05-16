@@ -27,7 +27,14 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+// The reactor pointer.
 void* reactor = NULL;
+
+// The number of clients connected to the server in its lifetime.
+unsigned int client_count = 0;
+
+// The total number of bytes sent to clients in the server's lifetime.
+unsigned long long int total_bytes_received = 0;
 
 int main(void) {
 	struct sockaddr_in server_addr;
@@ -45,54 +52,54 @@ int main(void) {
 	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 	{
 		perror("socket() failed");
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(int)) < 0)
 	{
 		perror("setsockopt(SO_REUSEADDR) failed");
 		close(server_fd);
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
 	{
 		perror("bind() failed");
 		close(server_fd);
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	if (listen(server_fd, MAX_QUEUE) < 0)
 	{
 		perror("listen() failed");
 		close(server_fd);
-		return 1;
+		return EXIT_FAILURE;
 	}
 
-	fprintf(stdout, "[INFO] Server listening on port %d\n", SERVER_PORT);
+	fprintf(stdout, "[INFO] Server listening on port %d.\n", SERVER_PORT);
 
 	reactor = createReactor();
 
 	if (reactor == NULL)
 	{
 		fprintf(stderr, "createReactor() failed: memory allocation error\n");
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	fprintf(stdout, "[INFO] Adding server socket to reactor...\n");
 	addFd(reactor, server_fd, server_handler);
-	fprintf(stdout, "[INFO] Server socket added to reactor\n");
+	fprintf(stdout, "[INFO] Server socket added to reactor.\n");
 
 	startReactor(reactor);
 	WaitFor(reactor);
 
 	signal_handler();
 
-	return 0;
+	return EXIT_SUCCESS;
 }
 
 void signal_handler() {
-	fprintf(stdout, "[INFO] Server shutting down...\n");
+	fprintf(stdout, "\33[2K\r[INFO] Server shutting down...\n");
 	
 	if (reactor != NULL)
 	{
@@ -115,12 +122,14 @@ void signal_handler() {
 		free(reactor);
 
 		fprintf(stdout, "[INFO] Memory cleanup complete, may the force be with you.\n");
+		fprintf(stdout, "[INFO] Client count in this session: %d.\n", client_count);
+		fprintf(stdout, "[INFO] Total bytes received in this session: %llu bytes (%llu KB).\n", total_bytes_received, total_bytes_received / 1024);
 	}
 
 	else
 		fprintf(stdout, "[INFO] Reactor wasn't created, no memory cleanup needed.\n");
 
-	exit(0);
+	exit(EXIT_SUCCESS);
 }
 
 void *client_handler(int fd, void *arg) {
@@ -130,17 +139,19 @@ void *client_handler(int fd, void *arg) {
 
 	if (bytes_read < 0)
 	{
-		fprintf(stderr, "[ERROR] Failed to read from client %d\n", fd);
+		perror("[ERROR] recv() failed");
 		close(fd);
 		return NULL;
 	}
 
 	else if (bytes_read == 0)
 	{
-		fprintf(stdout, "[INFO] Client %d disconnected\n", fd);
+		fprintf(stdout, "[INFO] Client %d disconnected.\n", fd);
 		close(fd);
 		return NULL;
 	}
+
+	total_bytes_received += bytes_read;
 
 	// Make sure the buffer is null-terminated, so we can print it.
 	buf[bytes_read] = '\0';
@@ -166,13 +177,15 @@ void *server_handler(int fd, void *arg) {
 
 	if (client_fd < 0)
 	{
-		fprintf(stderr, "[ERROR] Failed to accept client\n");
+		perror("[ERROR] accept() failed");
 		return NULL;
 	}
 
 	addFd(reactor, client_fd, client_handler);
 
-	fprintf(stdout, "[INFO] Client %s:%d connected, ID: %d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client_fd);
+	client_count++;
+
+	fprintf(stdout, "[INFO] Client %s:%d connected, ID: %d.\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client_fd);
 
 	return arg;
 }
