@@ -30,7 +30,7 @@ void *reactorRun(void *react) {
 	if (react == NULL)
 	{
 		errno = EINVAL;
-		perror("[ERROR] reactorRun() failed");
+		perror("\033[0;31m[ERROR]\033[0;37m reactorRun() failed");
 		return NULL;
 	}
 
@@ -66,7 +66,7 @@ void *reactorRun(void *react) {
 
 		if (ret < 0)
 		{
-			perror("[ERROR] poll() failed");
+			perror("\033[0;31m[ERROR]\033[0;37m poll() failed");
 			return NULL;
 		}
 
@@ -118,7 +118,7 @@ void *reactorRun(void *react) {
 		}
 	}
 
-	fprintf(stdout, "[INFO] Reactor thread finished.\n");
+	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Reactor thread finished.\n");
 
 	return reactor;
 }
@@ -126,11 +126,11 @@ void *reactorRun(void *react) {
 void *createReactor() {
 	reactor_t_ptr react = NULL;
 
-	fprintf(stdout, "[INFO] Creating reactor...\n");
+	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Creating reactor...\n");
 
 	if ((react = (reactor_t_ptr)malloc(sizeof(reactor_t))) == NULL)
 	{
-		perror("[ERROR] malloc() failed");
+		perror("\033[0;31m[ERROR]\033[0;37m malloc() failed");
 		return NULL;
 	}
 
@@ -138,7 +138,7 @@ void *createReactor() {
 	react->head = NULL;
 	react->running = false;
 
-	fprintf(stdout, "[INFO] Reactor created.\n");
+	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Reactor created.\n");
 
 	return react;
 }
@@ -147,7 +147,7 @@ void startReactor(void *react) {
 	if (react == NULL)
 	{
 		errno = EINVAL;
-		perror("[ERROR] startReactor() failed");
+		perror("\033[0;31m[ERROR]\033[0;37m startReactor() failed");
 		return;
 	}
 
@@ -156,20 +156,20 @@ void startReactor(void *react) {
 	if (reactor->running || reactor->head == NULL)
 		return;
 
-	fprintf(stdout, "[INFO] Starting reactor thread...\n");
+	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Starting reactor thread...\n");
 
 	reactor->running = true;
 
 	pthread_create(&reactor->thread, NULL, reactorRun, reactor);
 
-	fprintf(stdout, "[INFO] Reactor thread started.\n");
+	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Reactor thread started.\n");
 }
 
 void stopReactor(void *react) {
 	if (react == NULL)
 	{
 		errno = EINVAL;
-		perror("[ERROR] stopReactor() failed");
+		perror("\033[0;31m[ERROR]\033[0;37m stopReactor() failed");
 		return;
 	}
 
@@ -178,7 +178,7 @@ void stopReactor(void *react) {
 	if (!reactor->running)
 		return;
 
-	fprintf(stdout, "[INFO] Stopping reactor thread gracefully...\n");
+	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Stopping reactor thread gracefully...\n");
 
 	reactor->running = false;
 
@@ -190,14 +190,14 @@ void stopReactor(void *react) {
 	pthread_join(reactor->thread, NULL);
 	pthread_detach(reactor->thread);
 
-	fprintf(stdout, "[INFO] Reactor thread stopped and detached.\n");
+	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Reactor thread stopped and detached.\n");
 }
 
 void addFd(void *react, int fd, handler_t handler) {
 	if (react == NULL)
 	{
 		errno = EINVAL;
-		perror("[ERROR] addFd() failed");
+		perror("\033[0;31m[ERROR]\033[0;37m addFd() failed");
 		return;
 	}
 
@@ -206,7 +206,7 @@ void addFd(void *react, int fd, handler_t handler) {
 
 	if (node == NULL)
 	{
-		perror("[ERROR] malloc() failed");
+		perror("\033[0;31m[ERROR]\033[0;37m malloc() failed");
 		return;
 	}
 
@@ -232,7 +232,7 @@ void WaitFor(void *react) {
 	if (react == NULL)
 	{
 		errno = EINVAL;
-		perror("[ERROR] WaitFor() failed");
+		perror("\033[0;31m[ERROR]\033[0;37m WaitFor() failed");
 		return;
 	}
 
@@ -241,6 +241,6 @@ void WaitFor(void *react) {
 	if (!reactor->running)
 		return;
 
-	fprintf(stdout, "[INFO] Reactor thread joined.\n");
+	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Reactor thread joined.\n");
 	pthread_join(reactor->thread, NULL);
 }
