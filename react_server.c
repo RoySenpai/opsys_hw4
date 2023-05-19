@@ -42,11 +42,7 @@ int main(void) {
 
 	int server_fd = -1, reuse = 1;
 
-	fprintf(stdout, "\t\t\t\033[0;36mReactor Server\n"
-					"\tCopyright (C) 2023  Roy Simanovich and Linor Ronen\n"
-					"\tThis program comes with ABSOLUTELY NO WARRANTY.\n"
-					"\tThis is free software, and you are welcome to redistribute it\n"
-					"\tunder certain conditions; see `LICENSE' for details.\033[0;37m\n\n");
+	fprintf(stdout, "%s", C_INFO_LICENSE);
 
 	signal(SIGINT, signal_handler);
 
@@ -58,45 +54,44 @@ int main(void) {
 
 	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 	{
-		perror("\033[0;31m[ERROR]\033[0;37m socket() failed");
+		fprintf(stderr, "%s socket() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
 		return EXIT_FAILURE;
 	}
 
 	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(int)) < 0)
 	{
-		perror("\033[0;31m[ERROR]\033[0;37m setsockopt(SO_REUSEADDR) failed");
+		fprintf(stderr, "%s setsockopt(SO_REUSEADDR) failed: %s\n", C_PREFIX_ERROR, strerror(errno));
 		close(server_fd);
 		return EXIT_FAILURE;
 	}
 
 	if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
 	{
-		perror("\033[0;31m[ERROR]\033[0;37m bind() failed");
+		fprintf(stderr, "%s bind() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
 		close(server_fd);
 		return EXIT_FAILURE;
 	}
 
 	if (listen(server_fd, MAX_QUEUE) < 0)
 	{
-		perror("\033[0;31m[ERROR]\033[0;37m listen() failed");
+		fprintf(stderr, "%s listen() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
 		close(server_fd);
 		return EXIT_FAILURE;
 	}
 
-	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Server listening on port \033[0;32m%d\033[0;37m.\n", SERVER_PORT);
+	fprintf(stdout, "%s Server listening on port \033[0;32m%d\033[0;37m.\n", C_PREFIX_INFO, SERVER_PORT);
 
 	reactor = createReactor();
 
 	if (reactor == NULL)
 	{
-		errno = ENOSPC;
-		perror("\033[0;31m[ERROR]\033[0;37m createReactor() failed");
+		fprintf(stderr, "%s createReactor() failed: %s\n", C_PREFIX_ERROR, strerror(ENOSPC));
 		return EXIT_FAILURE;
 	}
 
-	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Adding server socket to reactor...\n");
+	fprintf(stdout, "%s Adding server socket to reactor...\n", C_PREFIX_INFO);
 	addFd(reactor, server_fd, server_handler);
-	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Server socket added to reactor.\n");
+	fprintf(stdout, "%s Server socket added to reactor.\n", C_PREFIX_INFO);
 
 	startReactor(reactor);
 	WaitFor(reactor);
@@ -107,13 +102,13 @@ int main(void) {
 }
 
 void signal_handler() {
-	fprintf(stdout, "\33[2K\r\033[0;35m[INFO]\033[0;37m Server shutting down...\n");
+	fprintf(stdout, "%s%s Server shutting down...\n", MACRO_CLEANUP, C_PREFIX_INFO);
 	
 	if (reactor != NULL)
 	{
 		stopReactor(reactor);
 
-		fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Closing all sockets and freeing memory...\n");
+		fprintf(stdout, "%s Closing all sockets and freeing memory...\n", C_PREFIX_INFO);
 
 		reactor_node_ptr curr = ((reactor_t_ptr)reactor)->head;
 		reactor_node_ptr prev = NULL;
@@ -129,13 +124,14 @@ void signal_handler() {
 
 		free(reactor);
 
-		fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Memory cleanup complete, may the force be with you.\n");
-		fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Client count in this session: %d.\n", client_count);
-		fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Total bytes received in this session: %llu bytes (%llu KB).\n", total_bytes_received, total_bytes_received / 1024);
+		fprintf(stdout, "%s Memory cleanup complete, may the force be with you.\n", C_PREFIX_INFO);
+		fprintf(stdout, "%s Statistics:\n", C_PREFIX_INFO);
+		fprintf(stdout, "%s Client count in this session: %d\n", C_PREFIX_INFO, client_count);
+		fprintf(stdout, "%s Total bytes received in this session: %llu bytes (%llu KB).\n", C_PREFIX_INFO, total_bytes_received, total_bytes_received / 1024);
 	}
 
 	else
-		fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Reactor wasn't created, no memory cleanup needed.\n");
+		fprintf(stdout, "%s Reactor wasn't created, no memory cleanup needed.\n", C_PREFIX_INFO);
 
 	exit(EXIT_SUCCESS);
 }
@@ -147,14 +143,14 @@ void *client_handler(int fd, void *arg) {
 
 	if (bytes_read < 0)
 	{
-		perror("\033[0;31m[ERROR]\033[0;37m recv() failed");
+		fprintf(stderr, "%s recv() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
 		close(fd);
 		return NULL;
 	}
 
 	else if (bytes_read == 0)
 	{
-		fprintf(stdout, "\033[0;33m[INFO]\033[0;37m Client \033[0;33m%d\033[0;37m disconnected.\n", fd);
+		fprintf(stdout, "%s Client \033[0;33m%d\033[0;37m disconnected.\n", C_PREFIX_WARNING, fd);
 		close(fd);
 		return NULL;
 	}
@@ -164,7 +160,7 @@ void *client_handler(int fd, void *arg) {
 	// Make sure the buffer is null-terminated, so we can print it.
 	buf[bytes_read] = '\0';
 
-	fprintf(stdout, "\033[0;32m[MESSAGE]\033[0;37m Client %d: %s\n", fd, buf);
+	fprintf(stdout, "%s Client %d: %s\n", C_PREFIX_MESSAGE, fd, buf);
 
 	return arg;
 }
@@ -177,8 +173,7 @@ void *server_handler(int fd, void *arg) {
 
 	if (reactor == NULL)
 	{
-		errno = EINVAL;
-		perror("\033[0;31m[ERROR]\033[0;37m Server handler error");
+		fprintf(stderr, "%s Server handler error: %s\n", C_PREFIX_ERROR, strerror(EINVAL));
 		return NULL;
 	}
 
@@ -186,7 +181,7 @@ void *server_handler(int fd, void *arg) {
 
 	if (client_fd < 0)
 	{
-		perror("\033[0;31m[ERROR]\033[0;37m accept() failed");
+		fprintf(stderr, "%s accept() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
 		return NULL;
 	}
 
@@ -194,7 +189,7 @@ void *server_handler(int fd, void *arg) {
 
 	client_count++;
 
-	fprintf(stdout, "\033[0;32m[INFO]\033[0;37m Client \033[0;32m%s:%d\033[0;37m connected, ID: \033[0;32m%d\033[0;37m.\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client_fd);
+	fprintf(stdout, "%s Client \033[0;32m%s:%d\033[0;37m connected, ID: \033[0;32m%d\033[0;37m.\n", C_PREFIX_INFO, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client_fd);
 
 	return arg;
 }

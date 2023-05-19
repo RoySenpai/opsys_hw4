@@ -30,7 +30,7 @@ void *reactorRun(void *react) {
 	if (react == NULL)
 	{
 		errno = EINVAL;
-		perror("\033[0;31m[ERROR]\033[0;37m reactorRun() failed");
+		fprintf(stderr, "%s reactorRun() failed: %s\n", C_PREFIX_ERROR, strerror(EINVAL));
 		return NULL;
 	}
 
@@ -66,7 +66,7 @@ void *reactorRun(void *react) {
 
 		if (ret < 0)
 		{
-			perror("\033[0;31m[ERROR]\033[0;37m poll() failed");
+			fprintf(stderr, "%s poll() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
 			return NULL;
 		}
 
@@ -118,7 +118,7 @@ void *reactorRun(void *react) {
 		}
 	}
 
-	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Reactor thread finished.\n");
+	fprintf(stdout, "%s Reactor thread finished.\n", C_PREFIX_INFO);
 
 	return reactor;
 }
@@ -126,11 +126,11 @@ void *reactorRun(void *react) {
 void *createReactor() {
 	reactor_t_ptr react = NULL;
 
-	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Creating reactor...\n");
+	fprintf(stdout, "%s Creating reactor...\n", C_PREFIX_INFO);
 
 	if ((react = (reactor_t_ptr)malloc(sizeof(reactor_t))) == NULL)
 	{
-		perror("\033[0;31m[ERROR]\033[0;37m malloc() failed");
+		fprintf(stderr, "%s malloc() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
 		return NULL;
 	}
 
@@ -138,7 +138,7 @@ void *createReactor() {
 	react->head = NULL;
 	react->running = false;
 
-	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Reactor created.\n");
+	fprintf(stdout, "%s Reactor created.\n", C_PREFIX_INFO);
 
 	return react;
 }
@@ -146,58 +146,81 @@ void *createReactor() {
 void startReactor(void *react) {
 	if (react == NULL)
 	{
-		errno = EINVAL;
-		perror("\033[0;31m[ERROR]\033[0;37m startReactor() failed");
+		fprintf(stderr, "%s startReactor() failed: %s\n", C_PREFIX_ERROR, strerror(EINVAL));
 		return;
 	}
 
 	reactor_t_ptr reactor = (reactor_t_ptr)react;
 
-	if (reactor->running || reactor->head == NULL)
+	if (reactor->head == NULL)
+	{
+		fprintf(stderr, "%s Tried to start a reactor without registered file descriptors.\n", C_PREFIX_WARNING);
 		return;
+	}
 
-	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Starting reactor thread...\n");
+	else if (reactor->running)
+	{
+		fprintf(stderr, "%s Tried to start a reactor that's already running.\n", C_PREFIX_WARNING);
+		return;
+	}
+
+	fprintf(stdout, "%s Starting reactor thread...\n", C_PREFIX_INFO);
 
 	reactor->running = true;
 
 	pthread_create(&reactor->thread, NULL, reactorRun, reactor);
 
-	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Reactor thread started.\n");
+	fprintf(stdout, "%s Reactor thread started.\n", C_PREFIX_INFO);
 }
 
 void stopReactor(void *react) {
 	if (react == NULL)
 	{
-		errno = EINVAL;
-		perror("\033[0;31m[ERROR]\033[0;37m stopReactor() failed");
+		fprintf(stderr, "%s stopReactor() failed: %s\n", C_PREFIX_ERROR, strerror(EINVAL));
 		return;
 	}
 
 	reactor_t_ptr reactor = (reactor_t_ptr)react;
 
 	if (!reactor->running)
+	{
+		fprintf(stderr, "%s Tried to stop a reactor that's not currently running.\n", C_PREFIX_WARNING);
 		return;
+	}
 
-	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Stopping reactor thread gracefully...\n");
+	fprintf(stdout, "%s Stopping reactor thread gracefully...\n", C_PREFIX_INFO);
 
 	reactor->running = false;
 
-	pthread_cancel(reactor->thread);
+	/*
+	 * In case the thread is blocked on poll(), we ensure that the thread
+	 * is cancelled by joining and detaching it.
+	 * This prevents memory leaks.
+	*/
+	if (pthread_cancel(reactor->thread) != 0)
+	{
+		fprintf(stderr, "%s pthread_cancel() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+		return;
+	}
 
-	// In case the thread is blocked on poll()
-	// Ensure that the thread is cancelled by joining it, and then detach it
-	// Prevents memory leaks
-	pthread_join(reactor->thread, NULL);
+	if (pthread_join(reactor->thread, NULL) != 0)
+	{
+		fprintf(stderr, "%s pthread_join() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+		return;
+	}
+
 	pthread_detach(reactor->thread);
 
-	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Reactor thread stopped and detached.\n");
+	// Reset reactor pthread.
+	reactor->thread = 0;
+
+	fprintf(stdout, "%s Reactor thread stopped and detached.\n", C_PREFIX_INFO);
 }
 
 void addFd(void *react, int fd, handler_t handler) {
 	if (react == NULL)
 	{
-		errno = EINVAL;
-		perror("\033[0;31m[ERROR]\033[0;37m addFd() failed");
+		fprintf(stderr, "%s addFd() failed: %s\n", C_PREFIX_ERROR, strerror(EINVAL));
 		return;
 	}
 
@@ -206,7 +229,7 @@ void addFd(void *react, int fd, handler_t handler) {
 
 	if (node == NULL)
 	{
-		perror("\033[0;31m[ERROR]\033[0;37m malloc() failed");
+		fprintf(stderr, "%s malloc() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
 		return;
 	}
 
@@ -231,16 +254,21 @@ void addFd(void *react, int fd, handler_t handler) {
 void WaitFor(void *react) {
 	if (react == NULL)
 	{
-		errno = EINVAL;
-		perror("\033[0;31m[ERROR]\033[0;37m WaitFor() failed");
+		fprintf(stderr, "%s WaitFor() failed: %s\n", C_PREFIX_ERROR, strerror(EINVAL));
 		return;
 	}
 
 	reactor_t_ptr reactor = (reactor_t_ptr)react;
+	void *ret = NULL;
 
 	if (!reactor->running)
 		return;
 
-	fprintf(stdout, "\033[0;35m[INFO]\033[0;37m Reactor thread joined.\n");
-	pthread_join(reactor->thread, NULL);
+	fprintf(stdout, "%s Reactor thread joined.\n", C_PREFIX_INFO);
+	
+	if (pthread_join(reactor->thread, ret) != 0)
+		fprintf(stderr, "%s pthread_join() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+
+	if (ret == NULL)
+		fprintf(stderr, "%s Reactor thread fatal error: %s", C_PREFIX_ERROR, strerror(errno));
 }

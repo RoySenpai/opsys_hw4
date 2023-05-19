@@ -20,16 +20,11 @@
 #define _REACTOR_H
 
 /*
-** Include this file before including system headers.  By default, with
-** C99 support from the compiler, it requests POSIX 2001 support.  With
-** C89 support only, it requests POSIX 1997 support.  Override the
-** default behaviour by setting either _XOPEN_SOURCE or _POSIX_C_SOURCE.
+ * Include this file before including system headers.  By default, with
+ * C99 support from the compiler, it requests POSIX 2001 support.  With
+ * C89 support only, it requests POSIX 1997 support.  Override the
+ * default behaviour by setting either _XOPEN_SOURCE or _POSIX_C_SOURCE.
 */
-
-/* _XOPEN_SOURCE 700 is loosely equivalent to _POSIX_C_SOURCE 200809L */
-/* _XOPEN_SOURCE 600 is loosely equivalent to _POSIX_C_SOURCE 200112L */
-/* _XOPEN_SOURCE 500 is loosely equivalent to _POSIX_C_SOURCE 199506L */
-
 #if !defined(_XOPEN_SOURCE) && !defined(_POSIX_C_SOURCE)
 	#if __STDC_VERSION__ >= 199901L
 		#define _XOPEN_SOURCE 600   /* SUS v3, POSIX 1003.1 2004 (POSIX 2001 + Corrigenda) */
@@ -43,23 +38,53 @@
 #include <stdlib.h>
 #include <pthread.h>
 
+
+/********************/
+/* Settings Section */
+/********************/
+
 /*
  * @brief The port on which the server listens.
  * @note The default port is 9034.
 */
-#define SERVER_PORT 9034
+#define SERVER_PORT 		9034
 
 /*
  * @brief The maximum number of clients that can connect to the server.
  * @note The default number is 8192 clients.
 */
-#define MAX_QUEUE 8192
+#define MAX_QUEUE 			8192
 
 /*
  * @brief The maximum number of bytes that can be read from a socket.
  * @note The default number is 1024 bytes.
 */
-#define MAX_BUFFER 1024
+#define MAX_BUFFER 			1024
+
+
+/************************/
+/* Messages definitions */
+/************************/
+
+// Prefixes
+#define C_PREFIX_ERROR 		"\033[0;31m[ERROR]\033[0;37m"
+#define C_PREFIX_WARNING 	"\033[0;33m[WARNING]\033[0;37m"
+#define C_PREFIX_INFO 		"\033[0;35m[INFO]\033[0;37m"
+#define C_PREFIX_MESSAGE 	"\033[0;32m[MESSAGE]\033[0;37m"
+
+// Messages
+#define C_INFO_LICENSE  	"\t\t\t\033[0;36mReactor Server\n" \
+							"\tCopyright (C) 2023  Roy Simanovich and Linor Ronen\n" \
+							"\tThis program comes with ABSOLUTELY NO WARRANTY.\n" \
+							"\tThis is free software, and you are welcome to redistribute it\n" \
+							"\tunder certain conditions; see `LICENSE' for details.\033[0;37m\n\n"
+
+// Macro to cleanup the screen.
+#define MACRO_CLEANUP		"\33[2K\r\033"
+
+/********************/
+/* Typedefs Section */
+/********************/
 
 /*
  * @brief A handler function for a file descriptor.
@@ -68,6 +93,11 @@
  * @return A pointer to something that the handler may return.
 */
 typedef void *(*handler_t)(int fd, void *arg);
+
+
+/**********************/
+/* Structures Section */
+/**********************/
 
 /*
  * @brief A node in the reactor linked list.
@@ -118,6 +148,11 @@ typedef struct _reactor_t
 	*/
 	bool running;
 } reactor_t, *reactor_t_ptr;
+
+
+/********************************/
+/* Functions Declartion Section */
+/********************************/
 
 /*
  * @brief Create a reactor object - a linked list of file descriptors and their handlers.
