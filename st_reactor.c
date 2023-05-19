@@ -20,7 +20,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <errno.h>
-#include <poll.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -169,7 +168,15 @@ void startReactor(void *react) {
 
 	reactor->running = true;
 
-	pthread_create(&reactor->thread, NULL, reactorRun, reactor);
+	int ret_val = pthread_create(&reactor->thread, NULL, reactorRun, reactor);
+
+	if (ret_val != 0)
+	{
+		fprintf(stderr, "%s pthread_create() failed: %s\n", C_PREFIX_ERROR, strerror(ret_val));
+		reactor->running = false;
+		reactor->thread = 0;
+		return;
+	}
 
 	fprintf(stdout, "%s Reactor thread started.\n", C_PREFIX_INFO);
 }
@@ -198,24 +205,27 @@ void stopReactor(void *react) {
 	 * is cancelled by joining and detaching it.
 	 * This prevents memory leaks.
 	*/
-	if (pthread_cancel(reactor->thread) != 0)
+
+	int ret_val = pthread_cancel(reactor->thread);
+
+	if (ret_val != 0)
 	{
-		fprintf(stderr, "%s pthread_cancel() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+		fprintf(stderr, "%s pthread_cancel() failed: %s\n", C_PREFIX_ERROR, strerror(ret_val));
 		return;
 	}
 
-	if (pthread_join(reactor->thread, NULL) != 0)
+	ret_val = pthread_join(reactor->thread, NULL);
+
+	if (ret_val != 0)
 	{
-		fprintf(stderr, "%s pthread_join() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+		fprintf(stderr, "%s pthread_join() failed: %s\n", C_PREFIX_ERROR, strerror(ret_val));
 		return;
 	}
-
-	pthread_detach(reactor->thread);
-
+	
 	// Reset reactor pthread.
 	reactor->thread = 0;
 
-	fprintf(stdout, "%s Reactor thread stopped and detached.\n", C_PREFIX_INFO);
+	fprintf(stdout, "%s Reactor thread stopped.\n", C_PREFIX_INFO);
 }
 
 void addFd(void *react, int fd, handler_t handler) {
@@ -270,9 +280,14 @@ void WaitFor(void *react) {
 		return;
 
 	fprintf(stdout, "%s Reactor thread joined.\n", C_PREFIX_INFO);
+
+	int ret_val = pthread_join(reactor->thread, &ret);
 	
-	if (pthread_join(reactor->thread, ret) != 0)
-		fprintf(stderr, "%s pthread_join() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+	if (ret_val != 0)
+	{
+		fprintf(stderr, "%s pthread_join() failed: %s\n", C_PREFIX_ERROR, strerror(ret_val));
+		return;
+	}
 
 	if (ret == NULL)
 		fprintf(stderr, "%s Reactor thread fatal error: %s", C_PREFIX_ERROR, strerror(errno));

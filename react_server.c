@@ -20,8 +20,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <errno.h>
-#include <poll.h>
-#include <pthread.h>
 #include <string.h>
 #include <signal.h>
 #include <sys/socket.h>
@@ -105,7 +103,8 @@ void signal_handler() {
 	
 	if (reactor != NULL)
 	{
-		stopReactor(reactor);
+		if (((reactor_t_ptr)reactor)->running)
+			stopReactor(reactor);
 
 		fprintf(stdout, "%s Closing all sockets and freeing memory...\n", C_PREFIX_INFO);
 
@@ -157,7 +156,25 @@ void *client_handler(int fd, void *react) {
 	total_bytes_received += bytes_read;
 
 	// Make sure the buffer is null-terminated, so we can print it.
-	buf[bytes_read] = '\0';
+	if (bytes_read < MAX_BUFFER)
+		buf[bytes_read] = '\0';
+
+	else
+		buf[MAX_BUFFER - 1] = '\0';
+
+	// Remove the arrow keys from the buffer, as they are not printable and mess up the output.
+	// And replace them with spaces, so the rest of the message won't cut off.
+	for (int i = 0; i < bytes_read - 3; i++)
+	{
+		if ((buf[i] == 0x1b) && (buf[i + 1] == 0x5b) && (buf[i + 2] == 0x41 || buf[i + 2] == 0x42 || buf[i + 2] == 0x43 || buf[i + 2] == 0x44))
+		{
+			buf[i] = 0x20;
+			buf[i + 1] = 0x20;
+			buf[i + 2] = 0x20;
+
+			i += 2;
+		}
+	}
 
 	fprintf(stdout, "%s Client %d: %s\n", C_PREFIX_MESSAGE, fd, buf);
 
