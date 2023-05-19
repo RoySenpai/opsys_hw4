@@ -51,9 +51,10 @@
 
 /*
  * @brief The maximum number of clients that can connect to the server.
- * @note The default number is 8192 clients.
+ * @note The default number is 16384 clients.
+ * @note For alot of OSes this is above the hard-limit.
 */
-#define MAX_QUEUE 			8192
+#define MAX_QUEUE 			16384
 
 /*
  * @brief The maximum number of bytes that can be read from a socket.
@@ -67,20 +68,31 @@
 /************************/
 
 // Prefixes
+
+// Colored prefix for error messages.
 #define C_PREFIX_ERROR 		"\033[0;31m[ERROR]\033[0;37m"
+
+// Colored prefix for warning messages.
 #define C_PREFIX_WARNING 	"\033[0;33m[WARNING]\033[0;37m"
+
+// Colored prefix for infomation messages.
 #define C_PREFIX_INFO 		"\033[0;35m[INFO]\033[0;37m"
+
+// Colored prefix for client messages.
 #define C_PREFIX_MESSAGE 	"\033[0;32m[MESSAGE]\033[0;37m"
 
 // Messages
+
+// Information and license message that's printing in the beggining of the program.
 #define C_INFO_LICENSE  	"\t\t\t\033[0;36mReactor Server\n" \
 							"\tCopyright (C) 2023  Roy Simanovich and Linor Ronen\n" \
 							"\tThis program comes with ABSOLUTELY NO WARRANTY.\n" \
 							"\tThis is free software, and you are welcome to redistribute it\n" \
 							"\tunder certain conditions; see `LICENSE' for details.\033[0;37m\n\n"
 
-// Macro to cleanup the screen.
+// Macro to cleanup the current line.
 #define MACRO_CLEANUP		"\33[2K\r\033"
+
 
 /********************/
 /* Typedefs Section */
@@ -89,10 +101,12 @@
 /*
  * @brief A handler function for a file descriptor.
  * @param fd The file descriptor.
- * @param arg A pointer to an argument that the handler may use.
+ * @param react Pointer to the reactor object.
  * @return A pointer to something that the handler may return.
+ * @note Returning NULL means something went wrong with the file descriptor, and as a result,
+ * 			the reactor will automaticly remove the problamtic file descriptor from the list.
 */
-typedef void *(*handler_t)(int fd, void *arg);
+typedef void *(*handler_t)(int fd, void *react);
 
 
 /**********************/
@@ -209,7 +223,7 @@ void signal_handler();
  * @note This function is called when a client sends a message to the server,
  * 			and prints the message.
 */
-void *client_handler(int fd, void *arg);
+void *client_handler(int fd, void *react);
 
 /*
  * @brief A handler for the server socket.
@@ -219,6 +233,6 @@ void *client_handler(int fd, void *arg);
  * @note This function is called when a new client connects to the server,
  * 			and adds the client to the reactor.
 */
-void *server_handler(int fd, void *arg);
+void *server_handler(int fd, void *react);
 
 #endif

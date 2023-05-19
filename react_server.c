@@ -86,12 +86,11 @@ int main(void) {
 	if (reactor == NULL)
 	{
 		fprintf(stderr, "%s createReactor() failed: %s\n", C_PREFIX_ERROR, strerror(ENOSPC));
+		close(server_fd);
 		return EXIT_FAILURE;
 	}
 
-	fprintf(stdout, "%s Adding server socket to reactor...\n", C_PREFIX_INFO);
 	addFd(reactor, server_fd, server_handler);
-	fprintf(stdout, "%s Server socket added to reactor.\n", C_PREFIX_INFO);
 
 	startReactor(reactor);
 	WaitFor(reactor);
@@ -136,7 +135,7 @@ void signal_handler() {
 	exit(EXIT_SUCCESS);
 }
 
-void *client_handler(int fd, void *arg) {
+void *client_handler(int fd, void *react) {
 	char buf[MAX_BUFFER] = { 0 };
 
 	int bytes_read = recv(fd, buf, sizeof(buf), 0);
@@ -162,14 +161,14 @@ void *client_handler(int fd, void *arg) {
 
 	fprintf(stdout, "%s Client %d: %s\n", C_PREFIX_MESSAGE, fd, buf);
 
-	return arg;
+	return react;
 }
 
-void *server_handler(int fd, void *arg) {
+void *server_handler(int fd, void *react) {
 	struct sockaddr_in client_addr;
 	socklen_t client_len = sizeof(client_addr);
 
-	reactor_t_ptr reactor = (reactor_t_ptr)arg;
+	reactor_t_ptr reactor = (reactor_t_ptr)react;
 
 	if (reactor == NULL)
 	{
@@ -191,5 +190,5 @@ void *server_handler(int fd, void *arg) {
 
 	fprintf(stdout, "%s Client \033[0;32m%s:%d\033[0;37m connected, ID: \033[0;32m%d\033[0;37m.\n", C_PREFIX_INFO, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client_fd);
 
-	return arg;
+	return react;
 }

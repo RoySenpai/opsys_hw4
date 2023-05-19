@@ -47,8 +47,9 @@ void *reactorRun(void *react) {
 			curr = curr->next;
 		}
 
-		struct pollfd fds[size];
 		curr = reactor->head;
+
+		struct pollfd fds[size];
 
 		memset(fds, 0, sizeof(fds));
 
@@ -218,11 +219,13 @@ void stopReactor(void *react) {
 }
 
 void addFd(void *react, int fd, handler_t handler) {
-	if (react == NULL)
+	if (react == NULL || handler == NULL || fd < 0)
 	{
 		fprintf(stderr, "%s addFd() failed: %s\n", C_PREFIX_ERROR, strerror(EINVAL));
 		return;
 	}
+
+	fprintf(stdout, "%s Adding file descriptor %d to the list, function handler address: %p.\n", C_PREFIX_INFO, fd, handler);
 
 	reactor_t_ptr reactor = (reactor_t_ptr)react;
 	reactor_node_ptr node = (reactor_node_ptr)malloc(sizeof(reactor_node));
@@ -249,6 +252,8 @@ void addFd(void *react, int fd, handler_t handler) {
 
 		curr->next = node;
 	}
+
+	fprintf(stdout, "%s Successfuly added file descriptor %d to the list.\n", C_PREFIX_INFO, fd);
 }
 
 void WaitFor(void *react) {
