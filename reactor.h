@@ -63,6 +63,14 @@
 */
 #define MAX_BUFFER 			1024
 
+/*
+ * @brief Defines the timeout for the poll() function.
+ * @note The default timeout is -1.
+ * @note A timeout of 0 means that poll() will return immediately.
+ * @note A timeout of -1 means that poll() will wait forever.
+*/
+#define POLL_TIMEOUT 		-1
+
 
 /************************/
 /* Messages definitions */
@@ -109,6 +117,21 @@
 */
 typedef void *(*handler_t)(int fd, void *react);
 
+/*
+ * @brief A node in the reactor linked list.
+ */
+typedef struct _reactor_node reactor_node, *reactor_node_ptr;
+
+/*
+ * @brief A reactor object - a linked list of file descriptors and their handlers.
+ */
+typedef struct _reactor_t reactor_t, *reactor_t_ptr;
+
+/*
+ * @brief A pollfd object, used to poll the file descriptors.
+*/
+typedef struct pollfd pollfd_t, *pollfd_t_ptr;
+
 
 /**********************/
 /* Structures Section */
@@ -117,7 +140,7 @@ typedef void *(*handler_t)(int fd, void *react);
 /*
  * @brief A node in the reactor linked list.
  */
-typedef struct _reactor_node
+struct _reactor_node
 {
 	/*
 	 * @brief The file descriptor.
@@ -126,23 +149,37 @@ typedef struct _reactor_node
 	int fd;
 
 	/*
-	 * @brief The handler function to call when the file descriptor is ready.
-	 * @note The first node is always the listening socket, and its handler is always
-	 * 			to accept a new connection and add it to the reactor.
+	 * @brief The file descriptor's handler union.
+	 * @note The union is used to allow the handler to be printed as a generic pointer,
+	 * 			with the compiler's flag -Wpedantic.
 	*/
-	handler_t handler;
+	union _hdlr_func_union
+	{
+		/*
+		 * @brief The file descriptor's handler.
+		 * @note The first node is always the listening socket, and its handler is always
+		 * 			to accept a new connection and add it to the reactor.
+		*/
+		handler_t handler;
+
+		/*
+		 * @brief A pointer to the handler function.
+		 * @note This is a generic pointer, and it's used to print the handler's address.
+		*/
+		void *handler_ptr;
+	} hdlr;
 
 	/*
 	 * @brief The next node in the linked list.
 	 * @note For the last node, this is NULL.
 	*/
-	struct _reactor_node *next;
-} reactor_node, *reactor_node_ptr;
+	reactor_node_ptr next;
+};
 
 /*
  * @brief A reactor object - a linked list of file descriptors and their handlers.
  */
-typedef struct _reactor_t
+struct _reactor_t
 {
 	/*
 	 * @brief The thread in which the reactor is running.
@@ -155,14 +192,21 @@ typedef struct _reactor_t
 	 * @brief The first node in the linked list.
 	 * @note The first node is always the listening socket.
 	*/
-	reactor_node *head;
+	reactor_node_ptr head;
+
+	/*
+	 * @brief A pointer to an array of pollfd structures.
+	 * @note The array is allocated and freed in reactorRun().
+	 * @note The array is used in reactorRun() to call poll().
+	*/
+	pollfd_t_ptr fds;
 
 	/*
 	 * @brief A boolean value indicating whether the reactor is running.
 	 * @note The value is set to true in startReactor() and to false in stopReactor().
 	*/
 	bool running;
-} reactor_t, *reactor_t_ptr;
+};
 
 
 /********************************/

@@ -30,14 +30,13 @@
 void* reactor = NULL;
 
 // The number of clients connected to the server in its lifetime.
-unsigned int client_count = 0;
+uint32_t client_count = 0;
 
 // The total number of bytes sent to clients in the server's lifetime.
-unsigned long long int total_bytes_received = 0;
+uint64_t total_bytes_received = 0;
 
 int main(void) {
 	struct sockaddr_in server_addr;
-
 	int server_fd = -1, reuse = 1;
 
 	fprintf(stdout, "%s", C_INFO_LICENSE);
@@ -125,7 +124,7 @@ void signal_handler() {
 		fprintf(stdout, "%s Memory cleanup complete, may the force be with you.\n", C_PREFIX_INFO);
 		fprintf(stdout, "%s Statistics:\n", C_PREFIX_INFO);
 		fprintf(stdout, "%s Client count in this session: %d\n", C_PREFIX_INFO, client_count);
-		fprintf(stdout, "%s Total bytes received in this session: %llu bytes (%llu KB).\n", C_PREFIX_INFO, total_bytes_received, total_bytes_received / 1024);
+		fprintf(stdout, "%s Total bytes received in this session: %lu bytes (%lu KB).\n", C_PREFIX_INFO, total_bytes_received, total_bytes_received / 1024);
 	}
 
 	else
@@ -135,20 +134,26 @@ void signal_handler() {
 }
 
 void *client_handler(int fd, void *react) {
-	char buf[MAX_BUFFER] = { 0 };
+	char *buf = (char *)calloc(MAX_BUFFER, sizeof(char));
 
-	int bytes_read = recv(fd, buf, sizeof(buf), 0);
-
-	if (bytes_read < 0)
+	if (buf == NULL)
 	{
-		fprintf(stderr, "%s recv() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+		fprintf(stderr, "%s calloc() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
 		close(fd);
 		return NULL;
 	}
 
-	else if (bytes_read == 0)
+	int bytes_read = recv(fd, buf, sizeof(buf), 0);
+
+	if (bytes_read <= 0)
 	{
-		fprintf(stdout, "%s Client \033[0;33m%d\033[0;37m disconnected.\n", C_PREFIX_WARNING, fd);
+		if (bytes_read < 0)
+			fprintf(stderr, "%s recv() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+
+		else
+			fprintf(stdout, "%s Client %d disconnected.\n", C_PREFIX_WARNING, fd);
+		
+		free(buf);
 		close(fd);
 		return NULL;
 	}
@@ -157,26 +162,28 @@ void *client_handler(int fd, void *react) {
 
 	// Make sure the buffer is null-terminated, so we can print it.
 	if (bytes_read < MAX_BUFFER)
-		buf[bytes_read] = '\0';
+		*(buf + bytes_read) = '\0';
 
 	else
-		buf[MAX_BUFFER - 1] = '\0';
+		*(buf + MAX_BUFFER - 1) = '\0';
 
-	// Remove the arrow keys from the buffer, as they are not printable and mess up the output.
-	// And replace them with spaces, so the rest of the message won't cut off.
+	// Remove the arrow keys from the buffer, as they are not printable and mess up the output,
+	// and replace them with spaces, so the rest of the message won't cut off.
 	for (int i = 0; i < bytes_read - 3; i++)
 	{
-		if ((buf[i] == 0x1b) && (buf[i + 1] == 0x5b) && (buf[i + 2] == 0x41 || buf[i + 2] == 0x42 || buf[i + 2] == 0x43 || buf[i + 2] == 0x44))
+		if ((*(buf + i) == 0x1b) && (*(buf + i + 1) == 0x5b) && (*(buf + i + 2) == 0x41 || *(buf + i + 2) == 0x42 || *(buf + i + 2) == 0x43 || *(buf + i + 2)== 0x44))
 		{
-			buf[i] = 0x20;
-			buf[i + 1] = 0x20;
-			buf[i + 2] = 0x20;
+			*(buf + i) = 0x20;
+			*(buf + i + 1) = 0x20;
+			*(buf + i + 2) = 0x20;
 
 			i += 2;
 		}
 	}
 
 	fprintf(stdout, "%s Client %d: %s\n", C_PREFIX_MESSAGE, fd, buf);
+
+	free(buf);
 
 	return react;
 }
@@ -187,6 +194,7 @@ void *server_handler(int fd, void *react) {
 
 	reactor_t_ptr reactor = (reactor_t_ptr)react;
 
+	// Sanity check.
 	if (reactor == NULL)
 	{
 		fprintf(stderr, "%s Server handler error: %s\n", C_PREFIX_ERROR, strerror(EINVAL));
@@ -195,17 +203,19 @@ void *server_handler(int fd, void *react) {
 
 	int client_fd = accept(fd, (struct sockaddr *)&client_addr, &client_len);
 
+	// Sanity check.
 	if (client_fd < 0)
 	{
 		fprintf(stderr, "%s accept() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
 		return NULL;
 	}
 
+	// Add the client to the reactor.
 	addFd(reactor, client_fd, client_handler);
 
 	client_count++;
 
-	fprintf(stdout, "%s Client \033[0;32m%s:%d\033[0;37m connected, ID: \033[0;32m%d\033[0;37m.\n", C_PREFIX_INFO, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client_fd);
+	fprintf(stdout, "%s Client %s:%d connected, ID: %d\n", C_PREFIX_INFO, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client_fd);
 
 	return react;
 }

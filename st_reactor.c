@@ -20,6 +20,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -48,45 +49,58 @@ void *reactorRun(void *react) {
 
 		curr = reactor->head;
 
-		struct pollfd fds[size];
+		reactor->fds = (pollfd_t_ptr)calloc(size, sizeof(pollfd_t));
 
-		memset(fds, 0, sizeof(fds));
+		if (reactor->fds == NULL)
+		{
+			fprintf(stderr, "%s reactorRun() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+			return NULL;
+		}
 
 		while (curr != NULL)
 		{
-			fds[i].fd = curr->fd;
-			fds[i].events = POLLIN;
-			fds[i].revents = 0;
+			(*(reactor->fds + i)).fd = curr->fd;
+			(*(reactor->fds + i)).events = POLLIN;
 
 			curr = curr->next;
 			i++;
 		}
 
-		int ret = poll(fds, i, -1);
+		int ret = poll(reactor->fds, i, POLL_TIMEOUT);
 
 		if (ret < 0)
 		{
 			fprintf(stderr, "%s poll() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+			free(reactor->fds);
+			reactor->fds = NULL;
 			return NULL;
+		}
+
+		else if (ret == 0)
+		{
+			fprintf(stdout, "%s poll() timed out.\n", C_PREFIX_WARNING);
+			free(reactor->fds);
+			reactor->fds = NULL;
+			continue;
 		}
 
 		for (i = 0; i < size; ++i)
 		{
-			if (fds[i].revents & POLLIN)
+			if ((*(reactor->fds + i)).revents & POLLIN)
 			{
 				reactor_node_ptr curr = reactor->head;
 
 				for (unsigned int j = 0; j < i; ++j)
 					curr = curr->next;
 
-				void *handler_ret = curr->handler(fds[i].fd, reactor);
+				void *handler_ret = curr->hdlr.handler((*(reactor->fds + i)).fd, reactor);
 
-				if (handler_ret == NULL && fds[i].fd != reactor->head->fd)
+				if (handler_ret == NULL && (*(reactor->fds + i)).fd != reactor->head->fd)
 				{
 					reactor_node_ptr curr_node = reactor->head;
 					reactor_node_ptr prev_node = NULL;
 
-					while (curr_node != NULL && curr_node->fd != fds[i].fd)
+					while (curr_node != NULL && curr_node->fd != (*(reactor->fds + i)).fd)
 					{
 						prev_node = curr_node;
 						curr_node = curr_node->next;
@@ -100,12 +114,12 @@ void *reactorRun(void *react) {
 				continue;
 			}
 
-			else if ((fds[i].revents & POLLHUP || fds[i].revents & POLLNVAL || fds[i].revents & POLLERR) && fds[i].fd != reactor->head->fd)
+			else if (((*(reactor->fds + i)).revents & POLLHUP || (*(reactor->fds + i)).revents & POLLNVAL || (*(reactor->fds + i)).revents & POLLERR) && (*(reactor->fds + i)).fd != reactor->head->fd)
 			{
 				reactor_node_ptr curr_node = reactor->head;
 				reactor_node_ptr prev_node = NULL;
 
-				while (curr_node != NULL && curr_node->fd != fds[i].fd)
+				while (curr_node != NULL && curr_node->fd != (*(reactor->fds + i)).fd)
 				{
 					prev_node = curr_node;
 					curr_node = curr_node->next;
@@ -116,6 +130,9 @@ void *reactorRun(void *react) {
 				free(curr_node);
 			}
 		}
+
+		free(reactor->fds);
+		reactor->fds = NULL;
 	}
 
 	fprintf(stdout, "%s Reactor thread finished.\n", C_PREFIX_INFO);
@@ -136,6 +153,7 @@ void *createReactor() {
 
 	react->thread = 0;
 	react->head = NULL;
+	react->fds = NULL;
 	react->running = false;
 
 	fprintf(stdout, "%s Reactor created.\n", C_PREFIX_INFO);
@@ -168,7 +186,7 @@ void startReactor(void *react) {
 
 	reactor->running = true;
 
-	int ret_val = pthread_create(&reactor->thread, NULL, reactorRun, reactor);
+	int ret_val = pthread_create(&reactor->thread, NULL, reactorRun, react);
 
 	if (ret_val != 0)
 	{
@@ -189,6 +207,7 @@ void stopReactor(void *react) {
 	}
 
 	reactor_t_ptr reactor = (reactor_t_ptr)react;
+	void *ret = NULL;
 
 	if (!reactor->running)
 	{
@@ -205,7 +224,6 @@ void stopReactor(void *react) {
 	 * is cancelled by joining and detaching it.
 	 * This prevents memory leaks.
 	*/
-
 	int ret_val = pthread_cancel(reactor->thread);
 
 	if (ret_val != 0)
@@ -214,12 +232,25 @@ void stopReactor(void *react) {
 		return;
 	}
 
-	ret_val = pthread_join(reactor->thread, NULL);
+	ret_val = pthread_join(reactor->thread, &ret);
 
 	if (ret_val != 0)
 	{
 		fprintf(stderr, "%s pthread_join() failed: %s\n", C_PREFIX_ERROR, strerror(ret_val));
 		return;
+	}
+
+	if (ret == NULL)
+	{
+		fprintf(stderr, "%s Reactor thread fatal error: %s", C_PREFIX_ERROR, strerror(errno));
+		return;
+	}
+
+	// Free the reactor's file descriptors.
+	if (reactor->fds != NULL)
+	{
+		free(reactor->fds);
+		reactor->fds = NULL;
 	}
 	
 	// Reset reactor pthread.
@@ -229,13 +260,13 @@ void stopReactor(void *react) {
 }
 
 void addFd(void *react, int fd, handler_t handler) {
-	if (react == NULL || handler == NULL || fd < 0)
+	if (react == NULL || handler == NULL || fd < 0 || fcntl(fd, F_GETFL) == -1 || errno == EBADF)
 	{
 		fprintf(stderr, "%s addFd() failed: %s\n", C_PREFIX_ERROR, strerror(EINVAL));
 		return;
 	}
 
-	fprintf(stdout, "%s Adding file descriptor %d to the list, function handler address: %p.\n", C_PREFIX_INFO, fd, handler);
+	fprintf(stdout, "%s Adding file descriptor %d to the list.\n", C_PREFIX_INFO, fd);
 
 	reactor_t_ptr reactor = (reactor_t_ptr)react;
 	reactor_node_ptr node = (reactor_node_ptr)malloc(sizeof(reactor_node));
@@ -247,7 +278,7 @@ void addFd(void *react, int fd, handler_t handler) {
 	}
 
 	node->fd = fd;
-	node->handler = handler;
+	node->hdlr.handler = handler;
 	node->next = NULL;
 
 	if (reactor->head == NULL)
@@ -263,7 +294,7 @@ void addFd(void *react, int fd, handler_t handler) {
 		curr->next = node;
 	}
 
-	fprintf(stdout, "%s Successfuly added file descriptor %d to the list.\n", C_PREFIX_INFO, fd);
+	fprintf(stdout, "%s Successfuly added file descriptor %d to the list, function handler address: %p.\n", C_PREFIX_INFO, fd, node->hdlr.handler_ptr);
 }
 
 void WaitFor(void *react) {

@@ -12,9 +12,11 @@
 
 # Flags for the compiler and linker.
 CC = gcc
-CFLAGS = -Wall -Wextra -Werror -std=c11 -g
-LIBS = -lpthread
-SHAREDLIB = -shared
+CFLAGS = -Wall -Wextra -Werror -std=c11 -g -pedantic
+SFLAGS = -shared
+TFLAGS = -pthread
+HFILE = reactor.h
+LIBFILE = st_reactor.so
 RM = rm -f
 
 # Phony targets - targets that are not files but commands to be executed by make.
@@ -30,23 +32,23 @@ default: all
 ############
 # Programs #
 ############
-react_server: react_server.o st_reactor.so
-	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
+react_server: react_server.o $(LIBFILE)
+	$(CC) $(CFLAGS) -o $@ $< ./$(LIBFILE) $(TFLAGS)
 
 ##################################
 # Libraries and shared libraries #
 ##################################
-st_reactor.so: st_reactor.o
-	$(CC) $(CFLAGS) $(SHAREDLIB) -o $@ $^ $(LIBS)
+$(LIBFILE): st_reactor.o
+	$(CC) $(CFLAGS) $(SFLAGS) -o $@ $^ $(TFLAGS)
 
-st_reactor.o: st_reactor.c reactor.h
+st_reactor.o: st_reactor.c $(HFILE)
 	$(CC) $(CFLAGS) -fPIC -c $<
 
 
 ################
 # Object files #
 ################
-%.o: %.c reactor.h
+%.o: %.c $(HFILE)
 	$(CC) $(CFLAGS) -c $<
 	
 #################
