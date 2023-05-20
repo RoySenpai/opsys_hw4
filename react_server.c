@@ -143,7 +143,7 @@ void *client_handler(int fd, void *react) {
 		return NULL;
 	}
 
-	int bytes_read = recv(fd, buf, sizeof(buf), 0);
+	int bytes_read = recv(fd, buf, MAX_BUFFER, 0);
 
 	if (bytes_read <= 0)
 	{
