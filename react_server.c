@@ -32,8 +32,11 @@ void* reactor = NULL;
 // The number of clients connected to the server in its lifetime.
 uint32_t client_count = 0;
 
-// The total number of bytes sent to clients in the server's lifetime.
+// The total number of bytes received from clients in the server's lifetime.
 uint64_t total_bytes_received = 0;
+
+// The total number of bytes sent to clients in the server's lifetime.
+uint64_t total_bytes_sent = 0;
 
 int main(void) {
 	struct sockaddr_in server_addr;
@@ -125,6 +128,7 @@ void signal_handler() {
 		fprintf(stdout, "%s Statistics:\n", C_PREFIX_INFO);
 		fprintf(stdout, "%s Client count in this session: %d\n", C_PREFIX_INFO, client_count);
 		fprintf(stdout, "%s Total bytes received in this session: %lu bytes (%lu KB).\n", C_PREFIX_INFO, total_bytes_received, total_bytes_received / 1024);
+		fprintf(stdout, "%s Total bytes sent in this session: %lu bytes (%lu KB).\n", C_PREFIX_INFO, total_bytes_sent, total_bytes_sent / 1024);
 	}
 
 	else
@@ -182,6 +186,39 @@ void *client_handler(int fd, void *react) {
 	}
 
 	fprintf(stdout, "%s Client %d: %s\n", C_PREFIX_MESSAGE, fd, buf);
+
+	// Send the message back to all except the sender.
+	// We don't need to send it back to the sender, as the sender already has the message.
+	// We also don't need to send it back to the server listening socket, as it will result in an error.
+	// We also know that the server listening socket is the first node in the list, so we can skip it,
+	// and start from the second node, which can't be NULL, as we already know there is at least one client connected.
+	reactor_node_ptr curr = ((reactor_t_ptr)react)->head->next;
+
+	while (curr != NULL)
+	{
+		if (curr->fd != fd)
+		{
+			int bytes_write = send(curr->fd, buf, bytes_read, 0);
+
+			if (bytes_write < 0)
+			{
+				fprintf(stderr, "%s send() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+				free(buf);
+				return NULL;
+			}
+
+			else if (bytes_write == 0)
+				fprintf(stderr, "%s Client %d disconnected, expecting to be remove in next poll() round.\n", C_PREFIX_WARNING, curr->fd);
+
+			else if (bytes_write < bytes_read)
+				fprintf(stderr, "%s send() sent less bytes than expected, check your network.\n", C_PREFIX_WARNING);
+
+			else
+				total_bytes_sent += bytes_write;
+		}
+
+		curr = curr->next;
+	}
 
 	free(buf);
 
