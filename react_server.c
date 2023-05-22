@@ -39,18 +39,19 @@ uint64_t total_bytes_received = 0;
 uint64_t total_bytes_sent = 0;
 
 int main(void) {
-	struct sockaddr_in server_addr;
+	struct sockaddr_in server_addr = {
+		.sin_family = AF_INET,
+		.sin_port = htons(SERVER_PORT),
+		.sin_addr.s_addr = INADDR_ANY
+	};
+
 	int server_fd = -1, reuse = 1;
 
 	fprintf(stdout, "%s", C_INFO_LICENSE);
 
 	signal(SIGINT, signal_handler);
 
-	memset(&server_addr, 0, sizeof(server_addr));
-
-	server_addr.sin_family = AF_INET;
-	server_addr.sin_port = htons(SERVER_PORT);
-	server_addr.sin_addr.s_addr = INADDR_ANY;
+	fprintf(stdout, "%s Starting server...\n", C_PREFIX_INFO);
 
 	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 	{
@@ -79,6 +80,12 @@ int main(void) {
 		return EXIT_FAILURE;
 	}
 
+	fprintf(stdout, "%s Server started successfully.\n", C_PREFIX_INFO);
+
+	fprintf(stdout, "%s Server configuration:\n", C_PREFIX_INFO);
+	fprintf(stdout, "%s Server is set to %s.\n", C_PREFIX_INFO, (SERVER_RELAY ? "\033[0;32mrelay messages\033[0;37m" : "\033[0;31mnot relay messages\033[0;37m"));
+	fprintf(stdout, "%s Server is set to %s.\n", C_PREFIX_INFO, (SERVER_PRINT_MSGS ? "\033[0;32mprint messages\033[0;37m" : "\033[0;31mnot print messages\033[0;37m"));
+
 	fprintf(stdout, "%s Server listening on port \033[0;32m%d\033[0;37m.\n", C_PREFIX_INFO, SERVER_PORT);
 
 	reactor = createReactor();
@@ -90,7 +97,19 @@ int main(void) {
 		return EXIT_FAILURE;
 	}
 
+	fprintf(stdout, "%s Adding server socket to reactor...\n", C_PREFIX_INFO);
+
 	addFd(reactor, server_fd, server_handler);
+
+	if (((reactor_t_ptr)reactor)->head == NULL)
+	{
+		fprintf(stderr, "%s addFd() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+		close(server_fd);
+		free(reactor);
+		return EXIT_FAILURE;
+	}
+
+	fprintf(stdout, "%s Server socket added to reactor successfully.\n", C_PREFIX_INFO);
 
 	startReactor(reactor);
 	WaitFor(reactor);
@@ -127,12 +146,26 @@ void signal_handler() {
 		fprintf(stdout, "%s Memory cleanup complete, may the force be with you.\n", C_PREFIX_INFO);
 		fprintf(stdout, "%s Statistics:\n", C_PREFIX_INFO);
 		fprintf(stdout, "%s Client count in this session: %d\n", C_PREFIX_INFO, client_count);
-		fprintf(stdout, "%s Total bytes received in this session: %lu bytes (%lu KB).\n", C_PREFIX_INFO, total_bytes_received, total_bytes_received / 1024);
-		fprintf(stdout, "%s Total bytes sent in this session: %lu bytes (%lu KB).\n", C_PREFIX_INFO, total_bytes_sent, total_bytes_sent / 1024);
+		fprintf(stdout, "%s Total bytes received in this session: %lu bytes (%lu KB / %lu MB).\n", C_PREFIX_INFO, 
+						total_bytes_received, total_bytes_received / 1024, (total_bytes_received / 1024) / 1024);
+		fprintf(stdout, "%s Total bytes sent in this session: %lu bytes (%lu KB / %lu MB).\n", C_PREFIX_INFO, 
+						total_bytes_sent, total_bytes_sent / 1024, (total_bytes_sent / 1024) / 1024);
+
+		if (client_count > 0)
+		{
+			fprintf(stdout, "%s Average bytes received per client: %lu bytes (%lu KB / %lu MB).\n", C_PREFIX_INFO, 
+							total_bytes_received / client_count, (total_bytes_received / client_count) / 1024, 
+							((total_bytes_received / client_count) / 1024) / 1024);
+			fprintf(stdout, "%s Average bytes sent per client: %lu bytes (%lu KB / %lu MB).\n", C_PREFIX_INFO, 
+							total_bytes_sent / client_count, (total_bytes_sent / client_count) / 1024, 
+							((total_bytes_sent / client_count) / 1024) / 1024);
+		}
 	}
 
 	else
 		fprintf(stdout, "%s Reactor wasn't created, no memory cleanup needed.\n", C_PREFIX_INFO);
+
+	fprintf(stdout, "%s Server is now offline, goodbye.\n", C_PREFIX_INFO);
 
 	exit(EXIT_SUCCESS);
 }
@@ -185,39 +218,59 @@ void *client_handler(int fd, void *react) {
 		}
 	}
 
-	fprintf(stdout, "%s Client %d: %s\n", C_PREFIX_MESSAGE, fd, buf);
+	// Print the message to the server.
+	// We don't need to print it if the server is not configured to print messages.
+	if (SERVER_PRINT_MSGS)
+		fprintf(stdout, "%s Client %d: %s\n", C_PREFIX_MESSAGE, fd, buf);
 
 	// Send the message back to all except the sender.
 	// We don't need to send it back to the sender, as the sender already has the message.
 	// We also don't need to send it back to the server listening socket, as it will result in an error.
 	// We also know that the server listening socket is the first node in the list, so we can skip it,
 	// and start from the second node, which can't be NULL, as we already know there is at least one client connected.
-	reactor_node_ptr curr = ((reactor_t_ptr)react)->head->next;
-
-	while (curr != NULL)
+	// We don't need to send it to the client if the server is not configured to relay messages.
+	if (SERVER_RELAY)
 	{
-		if (curr->fd != fd)
+		reactor_node_ptr curr = ((reactor_t_ptr)react)->head->next;
+
+		char *buf_copy = (char *)calloc(bytes_read + SERVER_RLY_MSG_LEN, sizeof(char));
+
+		if (buf_copy == NULL)
 		{
-			int bytes_write = send(curr->fd, buf, bytes_read, 0);
-
-			if (bytes_write < 0)
-			{
-				fprintf(stderr, "%s send() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
-				free(buf);
-				return NULL;
-			}
-
-			else if (bytes_write == 0)
-				fprintf(stderr, "%s Client %d disconnected, expecting to be remove in next poll() round.\n", C_PREFIX_WARNING, curr->fd);
-
-			else if (bytes_write < bytes_read)
-				fprintf(stderr, "%s send() sent less bytes than expected, check your network.\n", C_PREFIX_WARNING);
-
-			else
-				total_bytes_sent += bytes_write;
+			fprintf(stderr, "%s calloc() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+			free(buf);
+			return NULL;
 		}
 
-		curr = curr->next;
+		snprintf(buf_copy, bytes_read + SERVER_RLY_MSG_LEN, "Message from client %d: %s", fd, buf);
+
+		while (curr != NULL)
+		{
+			if (curr->fd != fd)
+			{
+				int bytes_write = send(curr->fd, buf_copy, bytes_read + SERVER_RLY_MSG_LEN, 0);
+
+				if (bytes_write < 0)
+				{
+					fprintf(stderr, "%s send() failed: %s\n", C_PREFIX_ERROR, strerror(errno));
+					free(buf);
+					return NULL;
+				}
+
+				else if (bytes_write == 0)
+					fprintf(stderr, "%s Client %d disconnected, expected to be remove in next poll() round.\n", C_PREFIX_WARNING, curr->fd);
+
+				else if (bytes_write < (bytes_read + SERVER_RLY_MSG_LEN))
+					fprintf(stderr, "%s send() sent less bytes than expected, check your network.\n", C_PREFIX_WARNING);
+
+				else
+					total_bytes_sent += bytes_write;
+			}
+
+			curr = curr->next;
+		}
+
+		free(buf_copy);
 	}
 
 	free(buf);
@@ -247,12 +300,12 @@ void *server_handler(int fd, void *react) {
 		return NULL;
 	}
 
+	fprintf(stdout, "%s Client %s:%d connected, Reference ID: %d\n", C_PREFIX_INFO, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client_fd);
+
 	// Add the client to the reactor.
 	addFd(reactor, client_fd, client_handler);
 
 	client_count++;
-
-	fprintf(stdout, "%s Client %s:%d connected, ID: %d\n", C_PREFIX_INFO, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client_fd);
 
 	return react;
 }

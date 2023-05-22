@@ -59,9 +59,9 @@
 
 /*
  * @brief The maximum number of bytes that can be read from a socket.
- * @note The default number is 1024 bytes.
+ * @note The default number is 2048 bytes.
 */
-#define MAX_BUFFER 			1024
+#define MAX_BUFFER 			2048
 
 /*
  * @brief Defines the timeout for the poll() function.
@@ -70,6 +70,22 @@
  * @note A timeout of -1 means that poll() will wait forever.
 */
 #define POLL_TIMEOUT 		-1
+
+/*
+ * @brief Defines whether the server is a relay server or not.
+ * @note The default value is 1.
+ * @note A value of 0 means that the server is not a relay server, and thus will not forward messages to other clients.
+ * @note A value of 1 means that the server is a relay server, and thus will forward messages to other clients.
+*/
+#define SERVER_RELAY		1
+
+/*
+ * @brief Defines whether the server prints messages or not.
+ * @note The default value is 1.
+ * @note A value of 0 means that the server won't print any incoming messages.
+ * @note A value of 1 means that the server will print every incoming message.
+*/
+#define SERVER_PRINT_MSGS	1
 
 
 /************************/
@@ -101,6 +117,12 @@
 
 // Macro to cleanup the current line.
 #define MACRO_CLEANUP		"\33[2K\r\033"
+
+// Length of the relay message prefix.
+// This is a fixed length, and should not be changed.
+// The length is 33 bytes and the prefix is:
+// "Message from client <clientid>: <message>"
+#define SERVER_RLY_MSG_LEN	33
 
 
 /********************/
